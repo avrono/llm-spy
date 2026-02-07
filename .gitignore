@@ -1,0 +1,54 @@
+# Binaries
+llm-spy
+*.o
+*.so
+
+# Go build artifacts
+probe_x86_bpfel.go
+probe_x86_bpfel.o
+
+# Go modules cache
+my_gopath/
+myvenv/
+
+# Log files
+*.log
+test_*.log
+requests.log
+llm_prompt_test.log
+
+# Certificates (generated)
+certs/
+
+# Python virtual environment
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary and test files
+*.tmp
+*.bak
+*.desired
+test_traffic.py
+test_traffic_new_conn.py
+test_simple.py
+test_llm_traffic.py
+test_enhanced_logging.sh
+debug_python.sh
+fix_filter.sh
+
+# Documentation that's project-specific (not for open source)
+notes.md
+plan.md
+task.md
+DEBUG.md
+CHROME_GUIDE.md
+walkthrough.md
