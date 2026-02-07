@@ -89,7 +89,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/llm-spy.git
+git clone https://github.com/avrono/llm-spy.git
 cd llm-spy
 
 # Generate BPF code
