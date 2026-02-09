@@ -3,7 +3,7 @@
 
 package main
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64 probe bpf/probe.c -- -I./bpf/headers -I../SystemClock/local-libbpf/usr/include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64 probe bpf/probe.c -- -I./bpf/headers
 
 import (
 	"bytes"

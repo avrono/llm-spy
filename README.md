@@ -84,10 +84,15 @@
 - **libssl.so.3** (OpenSSL 3.x)
 - **Root privileges** (required for eBPF)
 - **Kernel headers** (for BPF compilation)
+- **libbpf headers** (required for BPF compilation)
 
 ### Build from Source
 
 ```bash
+# Install dependencies (Debian/Ubuntu)
+sudo apt update
+sudo apt install -y build-essential libbpf-dev linux-headers-$(uname -r)
+
 # Clone the repository
 git clone https://github.com/avrono/llm-spy.git
 cd llm-spy
