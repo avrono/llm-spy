@@ -148,6 +148,20 @@ sudo ./llm-spy --debug
 sudo ./llm-spy --proxy --port 8080
 ```
 
+## 🔒 Certificate Setup for Proxy Mode
+
+When using proxy mode (`--proxy`) to intercept traffic from browsers or Electron apps (like Antigravity or Factory Droid), you need to trust the local CA.
+
+### 1. Generate Local CA
+```bash
+./gen_ca.sh
+```
+
+### 2. Import into Chrome/Chromium
+1.  Settings -> **Privacy and security** -> **Security** -> **Manage certificates**.
+2.  Select **Authorities** tab -> **Import**.
+3.  Choose `certs/ca.crt` and check **"Trust this certificate for identifying websites"**.
+
 ### Example Output
 
 **LLM Request Capture:**
