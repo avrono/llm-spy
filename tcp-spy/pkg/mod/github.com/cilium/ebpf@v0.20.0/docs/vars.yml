@@ -1,3 +1,0 @@
-# Variables accessible in documentation using e.g. '{{ proj }}'.
-extra:
-  proj: "`ebpf-go`"
