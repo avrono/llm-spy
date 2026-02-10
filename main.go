@@ -50,6 +50,7 @@ var (
 	proxyMode     = flag.Bool("proxy", false, "Enable transparent proxy for Chrome/Electron")
 	proxyPort     = flag.Int("port", 8080, "Port for the transparent proxy")
 	outputFile    = flag.String("output", "", "File path to log outgoing request data (append mode)")
+	forceTcpLog   = flag.Bool("force-tcp-log", false, "Force logging of all TCP/IP events, bypassing filters")
 )
 
 // match the struct in probe.c
@@ -347,6 +348,11 @@ func processEvent(event *probeData, bufMgr *BufferManager, sseAggregators map[st
 		log.Printf("[DEBUG] Event: PID=%d Proc=%s Dir=%s Len=%d", event.Pid, processName, direction, event.Length)
 	}
 
+	// Force log mode: Log raw event header
+	if *forceTcpLog {
+		log.Printf("[FORCE-TCP] PID=%d Proc=%s Dir=%s Len=%d", event.Pid, processName, direction, event.Length)
+	}
+
 	// Apply process filter if specified
 	if *processFilter != "" && !strings.Contains(strings.ToLower(processName), strings.ToLower(*processFilter)) {
 		if *debug {
@@ -496,7 +502,7 @@ func processEvent(event *probeData, bufMgr *BufferManager, sseAggregators map[st
 
 	// Fallback: show if it contains interesting patterns or is HTTP/2
 	// If --all is set, show everything that wasn't already processed as JSON/SSE
-	if *showAll || isLLM || isHTTP2 || llm.IsRequest(payloadStr) || llm.IsResponse(payloadStr) {
+	if *showAll || *forceTcpLog || isLLM || isHTTP2 || llm.IsRequest(payloadStr) || llm.IsResponse(payloadStr) {
 		if *debug {
 			log.Printf("[DEBUG] Fallback display triggered (showAll=%v)", *showAll)
 		}
@@ -508,6 +514,9 @@ func processEvent(event *probeData, bufMgr *BufferManager, sseAggregators map[st
 }
 
 func getMode() string {
+	if *forceTcpLog {
+		return "Force TCP Logging (All Events)"
+	}
 	if *showAll {
 		return "All SSL Traffic"
 	}
