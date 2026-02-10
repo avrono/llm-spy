@@ -10,6 +10,7 @@ probe_x86_bpfel.o
 # Go modules cache
 my_gopath/
 myvenv/
+pkg/
 
 # Log files
 *.log
