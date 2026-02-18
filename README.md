@@ -26,6 +26,21 @@
 
 > [!IMPORTANT]
 > **Current Scope**: llm-spy currently works with applications using **OpenSSL 3.x** (`libssl.so.3`). This includes Python, Node.js, Ruby, and many other applications. However, **most modern coding agents** (Cursor, Windsurf, Cody, etc.) use BoringSSL or embedded SSL libraries and are **not yet supported**. See [Current Limitations](#-current-limitations) for details and how you can help!
+## Alternate Implementation
+
+The `ebpf` approach does not always yield results for analysing `tokens` sent. 
+
+Have been trying an alternate approach using `tshark` and parsing `protobuf` with `protoc`
+
+````bash
+# Ensure your SSL keylog is active (usually set via export SSLKEYLOGFILE=/tmp/sslkeys.log)
+# Run the capture script and pipe it into the python decoder
+
+cd llm_proxy/
+sudo ./capture_prompts.sh | python3 decode_prompts.py | tee decode_test.out
+````
+
+You need `tshark` and `protoc` installed for this to work.
 
 ## ✨ Key Features
 

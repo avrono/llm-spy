@@ -24,6 +24,14 @@ import (
 	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/rlimit"
 
+	// Local packages
+	// Since we are in the same module "llm-spy", we can import directly?
+	// If go.mod defines module "llm-spy", then "llm-spy/pkg/..." should be valid IF the layout is correct.
+	// But the error says it can't find them in GOROOT.
+	// It seems Go module mode might not be fully active or correctly detected by the environment.
+	// Let's try relative imports or check go env.
+	// Actually, the error `package llm-spy/pkg/http2 is not in std` usually means it treats it as std lib because it didn't resolve as module.
+	
 	"llm-spy/pkg/http2"
 	"llm-spy/pkg/jsonutil"
 	"llm-spy/pkg/llm"
@@ -39,6 +47,25 @@ import (
 	"crypto/x509/pkix"
 	"math/big"
 )
+
+// Helper functions for IP parsing (copied from tcp-spy)
+func parseIntToIP(family uint16, addr [4]uint32) net.IP {
+	if family == 2 { // AF_INET
+		ip := make(net.IP, 4)
+		binary.LittleEndian.PutUint32(ip, addr[0])
+		return ip
+	} else { // AF_INET6
+		ip := make(net.IP, 16)
+		for i := 0; i < 4; i++ {
+			binary.LittleEndian.PutUint32(ip[i*4:], addr[i])
+		}
+		return ip
+	}
+}
+
+func htons(v uint16) uint16 {
+	return (v << 8) | (v >> 8)
+}
 
 // Command-line flags
 var (
@@ -56,10 +83,16 @@ var (
 // match the struct in probe.c
 type probeData struct {
 	Pid    uint32
-	Type   uint32 // 0=SEND, 1=RECV
+	Type   uint32 // 0=SEND, 1=RECV, 2=TCP_CONNECT
 	Length uint32
 	Comm   [16]byte // Process name
 	Data   [4096]byte
+	// TCP Specific fields
+	Saddr  [4]uint32
+	Daddr  [4]uint32
+	Sport  uint16
+	Dport  uint16
+	Family uint16
 }
 
 // ConnectionBuffer tracks reassembly state for a connection
@@ -273,6 +306,24 @@ func main() {
 		}
 	}
 
+	// 2d. Attach TCP Connect (Kernel Probe) for Correlation
+	kpTcpConnect, err := link.Kprobe("tcp_connect", objs.KprobeTcpConnect, nil)
+	if err != nil {
+		log.Printf("Warning: could not attach tcp_connect: %v", err)
+	} else {
+		defer kpTcpConnect.Close()
+		log.Printf("✓ Attached tcp_connect (for Correlation)")
+	}
+
+	// 2e. Attach SSL_connect (Uprobe) for Handshake Tracking
+	upSslConnect, err := sslWriteLink.Uprobe("SSL_connect", objs.ProbeSslConnect, nil)
+	if err != nil {
+		log.Printf("Warning: could not attach SSL_connect: %v", err)
+	} else {
+		defer upSslConnect.Close()
+		log.Printf("✓ Attached SSL_connect")
+	}
+
 	// 3. Open a perf event reader from user space on the PERF_EVENT_ARRAY map.
 	rd, err := perf.NewReader(objs.Events, 4096*64) // Larger buffer for 4KB chunks
 	if err != nil {
@@ -338,9 +389,30 @@ func main() {
 func processEvent(event *probeData, bufMgr *BufferManager, sseAggregators map[string]*sse.StreamAggregator, sseMu *sync.Mutex) {
 	// Extract process name
 	processName := string(bytes.TrimRight(event.Comm[:], "\x00"))
+	
+	// Handle TCP Connect Events (Correlation)
+	if event.Type == 2 {
+		dstIP := parseIntToIP(event.Family, event.Daddr)
+		dport := htons(event.Dport)
+		// Only log if it's port 443 (HTTPS)
+		if dport == 443 {
+			log.Printf("🔗 [TCP-CONNECT] PID: %d (%s) -> %s:%d (Kernel)", 
+				event.Pid, processName, dstIP.String(), dport)
+		}
+		return
+	}
+
+	// Handle SSL_connect (Handshake)
+	if event.Type == 3 {
+		log.Printf("🤝 [SSL_connect] PID: %d (%s) - Handshake Initiated", event.Pid, processName)
+		return
+	}
+
 	direction := "SEND"
+	funcName := "[SSL_write]"
 	if event.Type == 1 {
 		direction = "RECV"
+		funcName = "[SSL_read]"
 	}
 
 	// Debug mode: show ALL events
@@ -350,7 +422,7 @@ func processEvent(event *probeData, bufMgr *BufferManager, sseAggregators map[st
 
 	// Force log mode: Log raw event header
 	if *forceTcpLog {
-		log.Printf("[FORCE-TCP] PID=%d Proc=%s Dir=%s Len=%d", event.Pid, processName, direction, event.Length)
+		log.Printf("%s PID=%d Proc=%s Len=%d", funcName, event.Pid, processName, event.Length)
 	}
 
 	// Apply process filter if specified
@@ -473,13 +545,13 @@ func processEvent(event *probeData, bufMgr *BufferManager, sseAggregators map[st
 			if llm.IsRequest(payloadStr) {
 				log.Printf("[DEBUG-JSON] Detected as LLM Request")
 				output := jsonutil.FormatLLMRequest(obj)
-				log.Println("\n" + output)
-				logToFile(*outputFile, output)
+				log.Println("\n" + *output)
+				logToFile(*outputFile, *output)
 			} else if llm.IsResponse(payloadStr) {
 				log.Printf("[DEBUG-JSON] Detected as LLM Response")
 				output := jsonutil.FormatLLMResponse(obj)
-				log.Println("\n" + output)
-				logToFile(*outputFile, output)
+				log.Println("\n" + *output)
+				logToFile(*outputFile, *output)
 			} else {
 				// Generic JSON
 				log.Printf("[DEBUG-JSON] Generic JSON, direction=%s", direction)

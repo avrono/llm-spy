@@ -14,10 +14,18 @@ char LICENSE[] SEC("license") = "Dual BSD/GPL";
 // Data shared with userspace for uprobes
 struct probe_data_t {
     u32 pid;
-    u32 type;   // 0=SEND, 1=RECV
+    u32 type;   // 0=SEND, 1=RECV, 2=TCP_CONNECT, 3=TCP_ACCEPT
     u32 length;
     char comm[16]; // Process name
     u8 data[4096];
+    // Add TCP specific fields (reusing data buffer if needed, or extending struct)
+    // To keep it simple, we'll pack TCP info into 'data' or add fields.
+    // Let's add specific fields but keep struct size manageable.
+    u32 saddr[4];
+    u32 daddr[4];
+    u16 sport;
+    u16 dport;
+    u16 family;
 };
 
 static __always_inline void opt_barrier(u32 va) {
@@ -59,6 +67,40 @@ struct {
 static __always_inline struct probe_data_t* get_data_buffer() {
     u32 key = 0;
     return bpf_map_lookup_elem(&data_buffer, &key);
+}
+
+// --------------------------------------------------------
+// TCP PROBES (Merged from tcp-spy)
+// --------------------------------------------------------
+
+#define AF_INET   2
+#define AF_INET6 10
+
+SEC("kprobe/tcp_connect")
+int kprobe_tcp_connect(struct pt_regs *ctx) {
+    struct sock *sk = (struct sock *)PT_REGS_PARM1(ctx);
+    struct probe_data_t *data = get_data_buffer();
+    if (!data) return 0;
+
+    data->pid = bpf_get_current_pid_tgid() >> 32;
+    data->type = 2; // TCP_CONNECT
+    bpf_get_current_comm(&data->comm, sizeof(data->comm));
+    data->length = 0; // No payload for TCP event
+
+    data->family = BPF_CORE_READ(sk, __sk_common.skc_family);
+    data->sport = BPF_CORE_READ(sk, __sk_common.skc_num);
+    data->dport = BPF_CORE_READ(sk, __sk_common.skc_dport);
+
+    if (data->family == AF_INET) {
+        data->saddr[0] = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
+        data->daddr[0] = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+    } else if (data->family == AF_INET6) {
+        BPF_CORE_READ_INTO(&data->saddr, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr32);
+        BPF_CORE_READ_INTO(&data->daddr, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr32);
+    }
+
+    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, data, sizeof(*data));
+    return 0;
 }
 
 // --------------------------------------------------------
@@ -174,16 +216,25 @@ int probe_ssl_read_ex_exit(struct pt_regs *ctx) {
     data->type = 1;
     bpf_get_current_comm(&data->comm, sizeof(data->comm));
     
-    // We don't know exact length easily here without reading *read_bytes
-    // For simplicity, we assume full buffer read or rely on userspace to parse valid TLS
-    // Actually, *read_bytes is the 4th arg to SSL_read_ex, but we can't access it easily in uretprobe
-    // unless we saved the pointer to it in entry probe.
-    // For now, let's grab the buffer content up to MAX_DATA_LEN
     data->length = 4096;
     bpf_probe_read_user(&data->data, 4096, *buf_ptr);
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, data, sizeof(*data));
 
     bpf_map_delete_elem(&active_reads, &id);
+    return 0;
+}
+
+SEC("uprobe/SSL_connect")
+int probe_ssl_connect(struct pt_regs *ctx) {
+    struct probe_data_t *data = get_data_buffer();
+    if (!data) return 0;
+    
+    data->pid = bpf_get_current_pid_tgid() >> 32;
+    data->type = 3; // SSL_CONNECT
+    bpf_get_current_comm(&data->comm, sizeof(data->comm));
+    data->length = 0; // No data, just the event
+
+    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, data, sizeof(*data));
     return 0;
 }
 
