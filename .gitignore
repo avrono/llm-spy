@@ -1,18 +1,22 @@
+# Go modules cache (local)
+my_gopath/
+pkg/mod/
+
 # Binaries
 llm-spy
+tcp-spy/tcp-spy
 *.o
 *.so
 
 # Go build artifacts
 probe_x86_bpfel.go
 probe_x86_bpfel.o
+tcp-spy/probe_x86_bpfel.go
+tcp-spy/probe_x86_bpfel.o
+tcp-spy/bpf_x86_bpfel.go
+tcp-spy/bpf_x86_bpfel.o
 
-# Go modules cache
-my_gopath/
-myvenv/
-pkg/
-
-# Log files
+# Python virtual environment
 *.log
 test_*.log
 requests.log
